@@ -13,6 +13,18 @@ On peut corriger le résultat en un geste, puis exporter tous les comptages vers
   <img src="docs/images/app-telephone.png" alt="L'application VisualCount sur un téléphone" width="320">
 </p>
 
+## 📱 Nouveau : version téléphone seul (sans ordinateur)
+
+**Ouvrez simplement : https://siqu45453.github.io/visualcount/**
+
+- L'application s'ouvre directement sur la **caméra** et compte les produits **en direct**.
+- L'IA tourne **dans le téléphone** : pas besoin d'ordinateur, ni de Wi-Fi commun.
+- Au premier lancement, elle télécharge l'IA (43 Mo, une seule fois). Ensuite elle marche **même sans Internet**.
+- Pour l'installer comme une application : menu du navigateur > **Ajouter à l'écran d'accueil**.
+- Rien n'est envoyé sur Internet : les photos restent dans le téléphone.
+
+Le code de cette version est dans le dossier [`docs/`](docs/). La version avec ordinateur (ci-dessous) reste disponible.
+
 ## Comment ça marche
 
 L'intelligence artificielle tourne sur **l'ordinateur du magasin**. Le téléphone ouvre simplement une page web
