@@ -380,7 +380,7 @@ function drawLive() {
   }
   const n = liveCount();
   $("liveCount").textContent = n == null ? "–" : n;
-  if (live.on && !live.fails) $("liveNote").textContent = live.paused ? "paused" : (live.area ? "in your area" : "live") + (live.ms ? ` · ${(live.ms / 1000).toFixed(1)} s` : "");
+  if (live.on && !live.fails) $("liveNote").textContent = live.paused ? "paused" : (live.area ? "in your area" : "live") + " · quick estimate" + (live.ms ? ` · ${(live.ms / 1000).toFixed(1)} s` : "");
 }
 
 // drag on the live view = choose an area
