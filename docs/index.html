@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>VisualCount</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="vendor/ort.wasm.min.js"></script>
+<script src="vendor/xlsx.full.min.js" defer></script>
+<style>
+:root{
+  --in:#16c172;--removed:#ff4d55;--added:#ffb020;--area:#ffd60a;--accent:#3fbf86;
+  --glass:rgba(0,0,0,.45);--font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --safe-t:env(safe-area-inset-top);--safe-b:env(safe-area-inset-bottom);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;background:#000;color:#fff;font:16px/1.4 var(--font);overflow:hidden;overscroll-behavior:none}
+button{font:600 1rem var(--font);color:#fff;background:var(--glass);border:0;border-radius:999px;padding:10px 14px;min-height:44px;cursor:pointer;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+button:active{transform:scale(.96)}
+.screen{position:fixed;inset:0;overflow:hidden}
+
+/* ---------- camera screen ---------- */
+#video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+#ov{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+.top{position:absolute;left:0;right:0;top:0;padding:calc(10px + var(--safe-t)) 12px 10px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;background:linear-gradient(rgba(0,0,0,.55),transparent);pointer-events:none}
+.top>*{pointer-events:auto}
+.pill{display:flex;align-items:center;gap:10px;background:var(--glass);border-radius:18px;padding:8px 16px 8px 12px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.pill b{font-size:2.6rem;line-height:1;font-variant-numeric:tabular-nums;min-width:1.2ch;text-align:center}
+.pill small{display:block;font-size:.8rem;opacity:.85;line-height:1.2}
+.dot{width:10px;height:10px;border-radius:50%;background:#888;flex:none}
+.dot.on{background:#ff3b30;animation:pulse 1.4s infinite}
+.dot.bad{background:#ffb020}
+@keyframes pulse{50%{opacity:.35}}
+.iconbtn{width:44px;height:44px;padding:0;display:grid;place-items:center;font-size:1.25rem}
+.iconbtn[aria-pressed="true"]{background:#ffd60a;color:#000}
+.bottom{position:absolute;left:0;right:0;bottom:0;padding:12px 24px calc(18px + var(--safe-b));background:linear-gradient(transparent,rgba(0,0,0,.6));display:grid;gap:14px;pointer-events:none}
+.bottom>*{pointer-events:auto}
+.chips{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
+.chip{font-size:.85rem;font-weight:600;padding:7px 12px;min-height:34px}
+.chip.area{background:#ffd60a;color:#000}
+.controls{display:grid;grid-template-columns:1fr auto 1fr;align-items:center}
+.thumb{justify-self:start;width:52px;height:52px;border-radius:12px;padding:0;overflow:hidden;border:2px solid #fff;position:relative;background:#222 center/cover no-repeat}
+.thumb span{position:absolute;right:-2px;top:-2px;background:var(--accent);color:#000;font-size:.75rem;border-radius:999px;padding:1px 6px;font-weight:700}
+.shutter{width:78px;height:78px;border-radius:50%;padding:0;background:transparent;border:5px solid #fff;display:grid;place-items:center;backdrop-filter:none}
+.shutter::after{content:"";width:60px;height:60px;border-radius:50%;background:#fff;transition:transform .1s}
+.shutter:active::after{transform:scale(.88)}
+.side{justify-self:end}
+.toast{position:absolute;left:50%;top:calc(96px + var(--safe-t));transform:translateX(-50%);background:rgba(0,0,0,.75);padding:8px 14px;border-radius:12px;font-size:.92rem;max-width:calc(100% - 32px);text-align:center;pointer-events:none}
+.loading{position:absolute;left:16px;right:16px;top:calc(110px + var(--safe-t));background:rgba(0,0,0,.78);border-radius:14px;padding:12px 14px;display:grid;gap:8px;font-weight:600;text-align:center}
+.loading small{font-weight:400;opacity:.8}
+.lbar{height:8px;background:#333;border-radius:99px;overflow:hidden}.lbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+.flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+.flash.go{opacity:.8;transition:none}
+
+/* ---------- no camera / help ---------- */
+.panel{position:absolute;inset:0;display:grid;place-items:center;padding:24px;background:#0b0f0d}
+.panel .box{max-width:420px;display:grid;gap:14px;text-align:center}
+.panel h2{margin:0;font-size:1.3rem}
+.panel p{margin:0;color:#c9d3cd}
+.panel button{border-radius:14px;min-height:52px}
+.primary{background:var(--accent)!important;color:#06140d!important}
+
+/* ---------- review screen ---------- */
+#review{background:#000;display:grid;grid-template-rows:auto 1fr auto}
+.rtop{padding:calc(8px + var(--safe-t)) 12px 8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.rtop .title{font-weight:700}
+.stage{position:relative;display:grid;place-items:center;overflow:hidden;min-height:0}
+#cv{display:block;touch-action:none}
+.busy{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.6);font-weight:600;font-size:1.1rem}
+.rhint{font-size:.88rem;color:#c9d3cd;text-align:center;padding:6px 16px 0}
+.rbar{background:#121714;border-top:1px solid #26302a;padding:10px 12px calc(10px + var(--safe-b));display:grid;gap:8px}
+.countrow{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.countrow b{font-size:2.4rem;line-height:1;font-variant-numeric:tabular-nums}
+.countrow span{color:#9aa89f;font-size:.88rem;text-align:right}
+.saverow{display:grid;grid-template-columns:1fr auto;gap:8px}
+input[type=text]{font:16px var(--font);padding:12px;border-radius:12px;border:1px solid #2b3630;background:#0b0f0d;color:#fff;min-width:0;min-height:48px}
+.saverow button{border-radius:12px;min-height:48px;padding:0 22px}
+
+/* ---------- saved list sheet ---------- */
+#sheet{background:rgba(0,0,0,.55);display:flex;align-items:flex-end}
+.sheet{width:100%;max-height:85%;background:#121714;border-radius:18px 18px 0 0;padding:14px 14px calc(14px + var(--safe-b));display:grid;grid-template-rows:auto 1fr auto;gap:10px}
+.sheet h2{margin:0;font-size:1.15rem}
+.sheet .head{display:flex;justify-content:space-between;align-items:center}
+.list{overflow:auto;min-height:60px}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th,td{text-align:left;padding:10px 6px;border-bottom:1px solid #26302a}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.sheet .acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sheet .acts button{border-radius:12px;min-height:48px}
+.empty{color:#9aa89f;text-align:center;padding:20px 0}
+#file{display:none}
+</style>
+</head>
+<body>
+
+<!-- ============ CAMERA (opens first) ============ -->
+<section id="cam" class="screen">
+  <video id="video" playsinline muted autoplay></video>
+  <canvas id="ov"></canvas>
+  <div class="flash" id="flash"></div>
+  <div class="top">
+    <div class="pill" aria-live="polite">
+      <span class="dot" id="dot"></span>
+      <b id="liveCount">–</b>
+      <div><small id="liveLabel">products</small><small id="liveNote">starting camera…</small></div>
+    </div>
+    <button class="iconbtn" id="torch" aria-pressed="false" title="Light" hidden>🔦</button>
+  </div>
+  <div class="toast" id="toast" hidden></div>
+  <div class="loading" id="loading" hidden><span id="loadText">Preparing the counting AI…</span><div class="lbar"><i id="loadBar"></i></div><small>One time only (43 MB). After that it works without internet.</small></div>
+  <div class="bottom">
+    <div class="chips">
+      <button class="chip" id="areaHint">Drag on screen to count one area</button>
+      <button class="chip area" id="areaClear" hidden>Area only ✕</button>
+      <button class="chip" id="pauseBtn">Pause</button>
+    </div>
+    <div class="controls">
+      <button class="thumb" id="thumb" title="Saved counts"><span id="nSaved" hidden>0</span></button>
+      <button class="shutter" id="shutter" aria-label="Take photo and check the count"></button>
+      <button class="iconbtn side" id="galleryBtn" title="Choose a photo" type="button">🖼️</button>
+    </div>
+  </div>
+
+  <div class="panel" id="nocam" hidden>
+    <div class="box">
+      <h2 id="nocamTitle">Camera not available</h2>
+      <p id="nocamText"></p>
+      <button class="primary" id="retryCam">Try the camera again</button>
+      <button id="nocamGallery">Choose a photo instead</button>
+    </div>
+  </div>
+</section>
+<input id="file" type="file" accept="image/*">
+
+<!-- ============ REVIEW (after the shutter) ============ -->
+<section id="review" class="screen" hidden>
+  <div class="rtop">
+    <button id="retake">‹ Camera</button>
+    <span class="title" id="rtitle">Check the count</span>
+    <button id="areaMode" aria-pressed="false">✎ Area</button>
+  </div>
+  <div style="display:grid;grid-template-rows:auto 1fr;min-height:0">
+    <p class="rhint" id="rhint">Tap a wrong box to remove it. Tap a missed product to add it.</p>
+    <div class="stage" id="stage">
+      <canvas id="cv"></canvas>
+      <div id="busy" class="busy" hidden>Counting products…</div>
+    </div>
+  </div>
+  <div class="rbar">
+    <div class="countrow"><b id="count">0</b><span id="countNote">products</span></div>
+    <div class="saverow">
+      <input id="product" type="text" placeholder="Name (e.g. Oil 5L, shelf 3)" enterkeyhint="done">
+      <button id="save" class="primary">Save</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SAVED LIST ============ -->
+<section id="sheet" class="screen" hidden>
+  <div class="sheet">
+    <div class="head"><h2>Saved counts</h2><button id="closeSheet">Close</button></div>
+    <div class="list"><table><thead><tr><th>Time</th><th>Name</th><th class="n">Count</th></tr></thead><tbody id="rows"></tbody></table>
+      <p class="empty" id="emptyRows">Nothing saved yet. Press the round button to take a photo, check it, then Save.</p></div>
+    <div class="acts"><button id="export" class="primary">Export Excel</button><button id="clearAll">Clear list</button></div>
+  </div>
+</section>
+
+<script>
+const $ = id => document.getElementById(id);
+const video = $("video"), ov = $("ov"), octx = ov.getContext("2d");
+const cv = $("cv"), ctx = cv.getContext("2d");
+const dpr = () => window.devicePixelRatio || 1;
+
+/* ---------------- shared state ---------------- */
+let stream = null, track = null;
+let live = { on: false, paused: false, busy: false, boxes: [], hist: [], area: null, drag: null, fails: 0, ms: 0 };
+let rows = [], lastThumb = "";
+try { rows = JSON.parse(localStorage.getItem("vc_rows") || "[]"); lastThumb = localStorage.getItem("vc_thumb") || ""; } catch (e) { rows = []; }
+
+function toast(t, ms = 2500) {
+  const el = $("toast"); el.textContent = t; el.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => el.hidden = true, ms);
+}
+const inBox = (a, x, y) => !a || (x >= a.x0 && x <= a.x1 && y >= a.y0 && y <= a.y1);
+const center = b => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2];
+const norm = a => ({ x0: Math.min(a.x0, a.x1), y0: Math.min(a.y0, a.y1), x1: Math.max(a.x0, a.x1), y1: Math.max(a.y0, a.y1) });
+
+/* ---------------- the AI, running inside the phone ---------------- */
+// Same shelf model as the PC version (DETR trained on SKU-110K), made smaller (int8, 43 MB).
+// Downloaded once, then kept on the phone, so the app also works without internet.
+const MODEL_URL = "model/detr-sku110k-int8.onnx";
+const LIVE_SIDE = 800;   // live video: smaller picture so the number updates faster
+const MEAN = [0.485, 0.456, 0.406], STD = [0.229, 0.224, 0.225];
+let session = null, modelErr = null;
+
+async function fetchWithProgress(url, onPct) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("download failed " + r.status);
+  const total = +r.headers.get("content-length") || 43129426;
+  if (!r.body || !r.body.getReader) return new Uint8Array(await r.arrayBuffer());
+  const reader = r.body.getReader(), out = new Uint8Array(total); let got = 0, chunks = [];
+  for (;;) {
+    const { done, value } = await reader.read(); if (done) break;
+    if (got + value.length <= out.length) out.set(value, got); else chunks.push(value);
+    got += value.length; onPct(Math.min(100, Math.round(got / total * 100)));
+  }
+  if (!chunks.length && got === out.length) return out;
+  const all = new Uint8Array(got); let o = 0;
+  all.set(out.subarray(0, Math.min(got, out.length)), 0); o = Math.min(got, out.length);
+  for (const c of chunks) { all.set(c, o); o += c.length; }
+  return all;
+}
+async function loadModel() {
+  const box = $("loading"), bar = $("loadBar"), txt = $("loadText");
+  box.hidden = false;
+  try {
+    ort.env.wasm.wasmPaths = new URL("vendor/", location.href).href;
+    ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
+    ort.env.wasm.proxy = true; // run the AI in the background so the camera stays smooth
+    const bytes = await fetchWithProgress(MODEL_URL, pct => { bar.style.width = pct + "%"; txt.textContent = `Preparing the counting AI… ${pct}%`; });
+    txt.textContent = "Starting the counting AI…";
+    session = await ort.InferenceSession.create(bytes, { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
+    box.hidden = true;
+  } catch (e) {
+    modelErr = e; console.error(e);
+    txt.textContent = "Couldn't load the counting AI. Connect to the internet once and reopen the app.";
+    bar.style.width = "0%";
+  }
+}
+function toTensor(can, maxLong) {
+  // Same resize rule as the PC version: short side 800, long side at most 1333 (or maxLong for live).
+  let k = 800 / Math.min(can.width, can.height);
+  k = Math.min(k, 1333 / Math.max(can.width, can.height));
+  if (maxLong) k = Math.min(k, maxLong / Math.max(can.width, can.height));
+  const w = Math.max(32, Math.round(can.width * k)), h = Math.max(32, Math.round(can.height * k));
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(can, 0, 0, w, h);
+  const px = g.getImageData(0, 0, w, h).data, n = w * h, f = new Float32Array(3 * n);
+  for (let i = 0; i < n; i++) {
+    f[i] = (px[i * 4] / 255 - MEAN[0]) / STD[0];
+    f[n + i] = (px[i * 4 + 1] / 255 - MEAN[1]) / STD[1];
+    f[2 * n + i] = (px[i * 4 + 2] / 255 - MEAN[2]) / STD[2];
+  }
+  return new ort.Tensor("float32", f, [1, 3, h, w]);
+}
+function iou(a, b) {
+  const ix = Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)), iy = Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+  const inter = ix * iy, u = (a.x1 - a.x0) * (a.y1 - a.y0) + (b.x1 - b.x0) * (b.y1 - b.y0) - inter;
+  return u > 0 ? inter / u : 0;
+}
+function cleanBoxes(list) { // remove duplicates and small boxes inside a bigger one (bottle cap inside bottle)
+  list.sort((a, b) => b.score - a.score);
+  const kept = [];
+  for (const b of list) if (kept.every(k => iou(b, k) < 0.5)) kept.push(b);
+  const area = b => (b.x1 - b.x0) * (b.y1 - b.y0);
+  return kept.filter(bi => !kept.some(bj => bj !== bi && area(bj) > area(bi) &&
+    Math.max(0, Math.min(bi.x1, bj.x1) - Math.max(bi.x0, bj.x0)) * Math.max(0, Math.min(bi.y1, bj.y1) - Math.max(bi.y0, bj.y0)) > 0.6 * area(bi)));
+}
+async function detect(can, isLive) {
+  if (!session) throw new Error(modelErr ? "model failed" : "model not ready");
+  const t0 = performance.now();
+  const out = await session.run({ pixel_values: toTensor(can, isLive ? LIVE_SIDE : 0) });
+  const lg = out.logits.data, bx = out.boxes.data, [, Q, C] = out.logits.dims;
+  const list = [];
+  for (let q = 0; q < Q; q++) {
+    let mx = -Infinity; for (let c = 0; c < C; c++) mx = Math.max(mx, lg[q * C + c]);
+    let sum = 0, best = 0; for (let c = 0; c < C; c++) { const e = Math.exp(lg[q * C + c] - mx); sum += e; if (c < C - 1) best = Math.max(best, e); }
+    const score = best / sum; if (score <= 0.5) continue;
+    const cx = bx[q * 4], cy = bx[q * 4 + 1], w = bx[q * 4 + 2], h = bx[q * 4 + 3];
+    list.push({ x0: Math.max(0, cx - w / 2), y0: Math.max(0, cy - h / 2), x1: Math.min(1, cx + w / 2), y1: Math.min(1, cy + h / 2), score });
+  }
+  return { boxes: cleanBoxes(list), ms: Math.round(performance.now() - t0) };
+}
+
+/* ---------------- camera ---------------- */
+async function startCamera() {
+  $("nocam").hidden = true;
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return noCam("Camera not available", "This browser doesn't allow the camera here. Open the app link in Chrome (Android) or Safari (iPhone).");
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+  } catch (e) {
+    const denied = e && (e.name === "NotAllowedError" || e.name === "SecurityError");
+    return noCam(denied ? "Allow the camera" : "Camera not available",
+      denied ? "VisualCount needs the camera to count. Tap the lock or ⓘ icon next to the address, allow Camera, then tap the button below."
+             : "No camera was found, or another app is using it. Close other camera apps and try again, or choose a photo.");
+  }
+  video.srcObject = stream;
+  track = stream.getVideoTracks()[0];
+  try { await video.play(); } catch (e) {}
+  try { const caps = track.getCapabilities ? track.getCapabilities() : {}; $("torch").hidden = !caps.torch; } catch (e) {}
+  live.on = true; live.fails = 0; live.hist = []; live.boxes = [];
+  sizeOverlay(); liveLoop();
+}
+function stopCamera() {
+  live.on = false;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null; track = null;
+}
+function noCam(title, text) {
+  $("nocamTitle").textContent = title; $("nocamText").textContent = text; $("nocam").hidden = false;
+  $("liveNote").textContent = "camera off"; $("dot").className = "dot";
+}
+$("retryCam").onclick = startCamera;
+$("torch").onclick = async () => {
+  const on = $("torch").getAttribute("aria-pressed") !== "true";
+  try { await track.applyConstraints({ advanced: [{ torch: on }] }); $("torch").setAttribute("aria-pressed", on); } catch (e) { toast("This phone doesn't allow the light here."); }
+};
+
+/* The video fills the screen (object-fit: cover), so part of the camera picture is cut off.
+   We only send the part the user can SEE, so screen position = picture position (0..1). */
+function visibleCrop() {
+  const vw = video.videoWidth, vh = video.videoHeight, W = ov.clientWidth, H = ov.clientHeight;
+  const s = Math.max(W / vw, H / vh);
+  const cw = W / s, ch = H / s;
+  return { sx: (vw - cw) / 2, sy: (vh - ch) / 2, sw: cw, sh: ch };
+}
+function grabFrame(maxSide) {
+  const c = visibleCrop();
+  const k = Math.min(1, maxSide / Math.max(c.sw, c.sh));
+  const can = document.createElement("canvas");
+  can.width = Math.round(c.sw * k); can.height = Math.round(c.sh * k);
+  can.getContext("2d").drawImage(video, c.sx, c.sy, c.sw, c.sh, 0, 0, can.width, can.height);
+  return can;
+}
+const toJpeg = (can, q) => new Promise(res => can.toBlob(res, "image/jpeg", q));
+
+async function liveLoop() {
+  if (!live.on) return;
+  if (!session || live.paused || document.hidden || !video.videoWidth || $("cam").hidden) { setTimeout(liveLoop, 300); return; }
+  live.busy = true;
+  try {
+    const data = await detect(grabFrame(1024), true);
+    live.boxes = data.boxes; live.ms = data.ms; live.fails = 0;
+    live.hist.push(live.boxes.filter(b => inBox(live.area, ...center(b))).length);
+    if (live.hist.length > 3) live.hist.shift();
+    $("dot").className = "dot on";
+  } catch (e) {
+    live.fails++;
+    if (live.fails >= 2) { $("dot").className = "dot bad"; $("liveNote").textContent = "AI problem, reopen the app"; live.boxes = []; }
+  }
+  live.busy = false;
+  drawLive();
+  setTimeout(liveLoop, live.fails ? 1500 : 30);
+}
+function liveCount() { // median of the last 3 results, so the number doesn't jump around
+  if (!live.hist.length) return null;
+  const s = live.hist.slice().sort((a, b) => a - b); return s[Math.floor(s.length / 2)];
+}
+function sizeOverlay() {
+  ov.width = Math.round(ov.clientWidth * dpr()); ov.height = Math.round(ov.clientHeight * dpr()); drawLive();
+}
+window.addEventListener("resize", () => { sizeOverlay(); if (!$("review").hidden) { layout(); draw(); } });
+function drawLive() {
+  const W = ov.width, H = ov.height, d = dpr();
+  octx.clearRect(0, 0, W, H);
+  const a = live.drag ? norm(live.drag) : live.area;
+  if (a && !live.drag) { // darken outside the chosen area
+    octx.fillStyle = "rgba(0,0,0,.4)";
+    octx.fillRect(0, 0, W, a.y0 * H); octx.fillRect(0, a.y1 * H, W, H - a.y1 * H);
+    octx.fillRect(0, a.y0 * H, a.x0 * W, (a.y1 - a.y0) * H); octx.fillRect(a.x1 * W, a.y0 * H, W - a.x1 * W, (a.y1 - a.y0) * H);
+  }
+  octx.lineWidth = 2.5 * d;
+  for (const b of live.boxes) {
+    const ins = inBox(live.area, ...center(b));
+    octx.strokeStyle = ins ? "rgba(22,193,114,.95)" : "rgba(255,255,255,.35)";
+    octx.strokeRect(b.x0 * W, b.y0 * H, (b.x1 - b.x0) * W, (b.y1 - b.y0) * H);
+  }
+  if (a) {
+    octx.strokeStyle = "#ffd60a"; octx.lineWidth = 3 * d; octx.setLineDash([10 * d, 6 * d]);
+    octx.strokeRect(a.x0 * W, a.y0 * H, (a.x1 - a.x0) * W, (a.y1 - a.y0) * H); octx.setLineDash([]);
+  }
+  const n = liveCount();
+  $("liveCount").textContent = n == null ? "–" : n;
+  if (live.on && !live.fails) $("liveNote").textContent = live.paused ? "paused" : (live.area ? "in your area" : "live") + (live.ms ? ` · ${(live.ms / 1000).toFixed(1)} s` : "");
+}
+
+// drag on the live view = choose an area
+const opos = e => { const r = ov.getBoundingClientRect(); return { x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)) }; };
+ov.addEventListener("pointerdown", e => { const p = opos(e); live.drag = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }; ov.setPointerCapture(e.pointerId); });
+ov.addEventListener("pointermove", e => { if (live.drag) { const p = opos(e); live.drag.x1 = p.x; live.drag.y1 = p.y; drawLive(); } });
+function endLiveDrag() {
+  if (!live.drag) return;
+  const a = norm(live.drag); live.drag = null;
+  if (a.x1 - a.x0 > 0.05 && a.y1 - a.y0 > 0.04) { setLiveArea(a); if (navigator.vibrate) navigator.vibrate(15); }
+  drawLive();
+}
+ov.addEventListener("pointerup", endLiveDrag); ov.addEventListener("pointercancel", endLiveDrag);
+function setLiveArea(a) {
+  live.area = a; live.hist = live.boxes.length ? [live.boxes.filter(b => inBox(a, ...center(b))).length] : [];
+  $("areaHint").hidden = !!a; $("areaClear").hidden = !a; drawLive();
+}
+$("areaClear").onclick = () => setLiveArea(null);
+$("areaHint").onclick = () => toast("Drag your finger over the shelf part you want to count.");
+$("pauseBtn").onclick = () => {
+  live.paused = !live.paused; $("pauseBtn").textContent = live.paused ? "Resume" : "Pause";
+  if (live.paused) video.pause(); else video.play().catch(() => {});
+  drawLive();
+};
+document.addEventListener("visibilitychange", () => { if (!document.hidden && live.on && video.paused && !live.paused) video.play().catch(() => {}); });
+
+/* ---------------- shutter: freeze the picture and check it ---------------- */
+$("shutter").onclick = async () => {
+  if (!live.on || !video.videoWidth) { $("file").click(); return; }
+  $("flash").classList.add("go"); setTimeout(() => $("flash").classList.remove("go"), 60);
+  if (navigator.vibrate) navigator.vibrate(30);
+  const can = grabFrame(1600);
+  openReview(can, can.width, can.height, `camera ${new Date().toLocaleTimeString()}`, live.area);
+};
+$("galleryBtn").onclick = () => $("file").click();
+$("nocamGallery").onclick = () => $("file").click();
+$("file").addEventListener("change", async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(f); });
+    const k = Math.min(1, 1600 / Math.max(im.naturalWidth, im.naturalHeight));
+    const can = document.createElement("canvas"); can.width = Math.round(im.naturalWidth * k); can.height = Math.round(im.naturalHeight * k);
+    can.getContext("2d").drawImage(im, 0, 0, can.width, can.height);
+    openReview(can, can.width, can.height, f.name || "photo.jpg", null);
+  } catch (err) { toast("Couldn't open that photo. Try another one."); }
+});
+
+/* ---------------- review screen (same tools as v1) ---------------- */
+let img = null, photoName = "", boxes = [], added = [], area = null, mode = "fix", drag = null, view = { x0: 0, y0: 0, x1: 1, y1: 1 };
+
+async function openReview(can, w, h, name, a) {
+  img = { el: can, w, h }; photoName = name; boxes = []; added = []; area = a;
+  $("cam").hidden = true; $("review").hidden = false; live.paused = true; video.pause();
+  setMode("fix"); $("busy").hidden = false;
+  try {
+    while (!session && !modelErr) await new Promise(r => setTimeout(r, 300));
+    const data = await detect(can, false);
+    boxes = data.boxes.map(b => ({ ...b, removed: false }));
+  } catch (err) {
+    toast(modelErr ? "The counting AI isn't loaded. Connect to the internet once and reopen the app." : "Couldn't count this photo. Try again.", 5000);
+  } finally { $("busy").hidden = true; draw(); }
+}
+function backToCamera() {
+  $("review").hidden = true; $("cam").hidden = false; $("product").blur();
+  live.paused = $("pauseBtn").textContent === "Resume";
+  if (!live.paused) video.play().catch(() => {});
+  sizeOverlay();
+}
+$("retake").onclick = backToCamera;
+
+function layout() {
+  if (!img) return;
+  const st = $("stage"), vw = (view.x1 - view.x0) * img.w, vh = (view.y1 - view.y0) * img.h;
+  const s = Math.min(st.clientWidth / vw, st.clientHeight / vh);
+  const w = vw * s, h = vh * s;
+  cv.width = Math.round(w * dpr()); cv.height = Math.round(h * dpr());
+  cv.style.width = w + "px"; cv.style.height = h + "px";
+}
+const sx = x => (x - view.x0) / (view.x1 - view.x0) * cv.width;
+const sy = y => (y - view.y0) / (view.y1 - view.y0) * cv.height;
+function tally() {
+  const inside = boxes.filter(b => inBox(area, ...center(b)));
+  const ai = inside.length, removed = inside.filter(b => b.removed).length;
+  const add = added.filter(p => inBox(area, p.x, p.y)).length;
+  return { ai, removed, add, total: ai - removed + add };
+}
+function draw() {
+  if (!img) return;
+  const W = cv.width, H = cv.height, d = dpr();
+  ctx.drawImage(img.el, view.x0 * img.w, view.y0 * img.h, (view.x1 - view.x0) * img.w, (view.y1 - view.y0) * img.h, 0, 0, W, H);
+  if (area && mode === "fix") {
+    ctx.fillStyle = "rgba(0,0,0,.5)";
+    ctx.fillRect(0, 0, W, sy(area.y0)); ctx.fillRect(0, sy(area.y1), W, H - sy(area.y1));
+    ctx.fillRect(0, sy(area.y0), sx(area.x0), sy(area.y1) - sy(area.y0)); ctx.fillRect(sx(area.x1), sy(area.y0), W - sx(area.x1), sy(area.y1) - sy(area.y0));
+  }
+  ctx.lineWidth = 2.5 * d;
+  for (const b of boxes) {
+    const ins = inBox(area, ...center(b));
+    if (!ins && mode === "fix") continue;
+    ctx.strokeStyle = b.removed ? "#ff4d55" : ins ? "#16c172" : "rgba(255,255,255,.4)";
+    const x = sx(b.x0), y = sy(b.y0), w = sx(b.x1) - x, h = sy(b.y1) - y;
+    ctx.strokeRect(x, y, w, h);
+    if (b.removed) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y + h); ctx.moveTo(x + w, y); ctx.lineTo(x, y + h); ctx.stroke(); }
+  }
+  for (const p of added) {
+    ctx.fillStyle = "#ffb020"; ctx.strokeStyle = "#000"; ctx.lineWidth = 2 * d;
+    ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), 10 * d, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+  const a = drag ? norm(drag) : (mode === "area" ? area : null);
+  if (a) {
+    ctx.strokeStyle = "#ffd60a"; ctx.lineWidth = 3 * d; ctx.setLineDash([10 * d, 6 * d]);
+    ctx.strokeRect(sx(a.x0), sy(a.y0), sx(a.x1) - sx(a.x0), sy(a.y1) - sy(a.y0)); ctx.setLineDash([]);
+  }
+  const t = tally();
+  $("count").textContent = t.total;
+  const parts = [`AI found ${t.ai}`]; if (t.removed) parts.push(`−${t.removed} removed`); if (t.add) parts.push(`+${t.add} added`);
+  $("countNote").textContent = (area ? "in your area · " : "") + parts.join(" · ");
+}
+const pos = e => {
+  const r = cv.getBoundingClientRect();
+  return { x: view.x0 + (e.clientX - r.left) / r.width * (view.x1 - view.x0), y: view.y0 + (e.clientY - r.top) / r.height * (view.y1 - view.y0) };
+};
+cv.addEventListener("pointerdown", e => {
+  if (!img || !$("busy").hidden) return;
+  const p = pos(e);
+  if (mode === "area") { drag = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }; cv.setPointerCapture(e.pointerId); return; }
+  if (!inBox(area, p.x, p.y)) return;
+  const r = cv.getBoundingClientRect(), px = r.width / (view.x1 - view.x0), py = r.height / (view.y1 - view.y0);
+  const hitAdd = added.findIndex(a => Math.hypot((a.x - p.x) * px, (a.y - p.y) * py) < 24);
+  if (hitAdd >= 0) { added.splice(hitAdd, 1); draw(); return; }
+  const hits = boxes.filter(b => inBox(area, ...center(b)) && p.x >= b.x0 && p.x <= b.x1 && p.y >= b.y0 && p.y <= b.y1)
+    .sort((a, b) => (a.x1 - a.x0) * (a.y1 - a.y0) - (b.x1 - b.x0) * (b.y1 - b.y0));
+  if (hits.length) hits[0].removed = !hits[0].removed; else added.push(p);
+  if (navigator.vibrate) navigator.vibrate(15);
+  draw();
+});
+cv.addEventListener("pointermove", e => { if (drag) { const p = pos(e); drag.x1 = p.x; drag.y1 = p.y; draw(); } });
+function endDrag() {
+  if (!drag) return;
+  const a = norm(drag); drag = null;
+  if (a.x1 - a.x0 > 0.03 && a.y1 - a.y0 > 0.03) { area = a; setMode("fix"); } else draw();
+}
+cv.addEventListener("pointerup", endDrag); cv.addEventListener("pointercancel", endDrag);
+function setMode(m) {
+  mode = m;
+  $("areaMode").setAttribute("aria-pressed", m === "area");
+  $("areaMode").textContent = m === "area" ? "Whole photo" : "✎ Area";
+  $("rhint").textContent = m === "area" ? "Drag your finger over the shelf part to count." : "Tap a wrong box to remove it. Tap a missed product to add it.";
+  if (m === "fix" && area) {
+    const mx = (area.x1 - area.x0) * 0.04, my = (area.y1 - area.y0) * 0.04;
+    view = { x0: Math.max(0, area.x0 - mx), y0: Math.max(0, area.y0 - my), x1: Math.min(1, area.x1 + mx), y1: Math.min(1, area.y1 + my) };
+  } else view = { x0: 0, y0: 0, x1: 1, y1: 1 };
+  layout(); draw();
+}
+$("areaMode").onclick = () => { if (mode === "area") { area = null; setMode("fix"); } else setMode("area"); };
+
+/* ---------------- save, list, Excel ---------------- */
+$("save").onclick = () => {
+  if (!img || !$("busy").hidden) return;
+  const t = tally();
+  rows.push({ time: new Date().toLocaleString(), product: $("product").value.trim() || "Unnamed", count: t.total, ai_count: t.ai, added: t.add, removed: t.removed, photo: photoName });
+  try { // small preview for the button bottom-left, like a phone's camera app
+    const k = 120 / Math.max(img.w, img.h), c = document.createElement("canvas");
+    c.width = Math.round(img.w * k); c.height = Math.round(img.h * k); c.getContext("2d").drawImage(img.el, 0, 0, c.width, c.height);
+    lastThumb = c.toDataURL("image/jpeg", 0.7);
+  } catch (e) {}
+  persist(); renderRows(); $("product").value = "";
+  backToCamera(); toast(`Saved ${t.total}. Ready for the next one.`);
+};
+function persist() { try { localStorage.setItem("vc_rows", JSON.stringify(rows)); localStorage.setItem("vc_thumb", lastThumb); } catch (e) {} }
+function renderRows() {
+  $("nSaved").hidden = !rows.length; $("nSaved").textContent = rows.length;
+  $("thumb").style.backgroundImage = lastThumb ? `url(${lastThumb})` : "";
+  $("emptyRows").hidden = !!rows.length;
+  const tb = $("rows"); tb.textContent = "";
+  for (const r of rows.slice().reverse()) {
+    const tr = document.createElement("tr");
+    for (const [v, n] of [[r.time], [r.product], [r.count, 1]]) { const td = document.createElement("td"); td.textContent = v; if (n) td.className = "n"; tr.append(td); }
+    tb.append(tr);
+  }
+}
+$("thumb").onclick = () => { $("sheet").hidden = false; };
+$("closeSheet").onclick = () => { $("sheet").hidden = true; };
+$("sheet").addEventListener("click", e => { if (e.target === $("sheet")) $("sheet").hidden = true; });
+let clearArmed = false;
+$("clearAll").onclick = () => {
+  if (!clearArmed) { clearArmed = true; $("clearAll").textContent = "Tap again to clear"; setTimeout(() => { clearArmed = false; $("clearAll").textContent = "Clear list"; }, 3000); return; }
+  rows = []; lastThumb = ""; persist(); renderRows(); clearArmed = false; $("clearAll").textContent = "Clear list";
+};
+$("export").onclick = async () => {
+  if (!rows.length) { toast("Nothing saved yet."); return; }
+  try {
+    const data = rows.map(r => ({ "Time": r.time, "Name": r.product, "Final count": r.count, "AI count": r.ai_count, "Added by hand": r.added, "Removed by hand": r.removed, "Photo": r.photo }));
+    const ws = XLSX.utils.json_to_sheet(data); ws["!cols"] = [20, 28, 12, 10, 14, 16, 24].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Counts");
+    XLSX.writeFile(wb, `visualcount-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  } catch (e) { toast("Export failed. Try again."); }
+};
+
+renderRows();
+startCamera();
+(async () => {
+  // First visit: install the offline helper, then reload once so the AI can use all CPU cores
+  // and the 43 MB model is saved on the phone (no second download later).
+  if ("serviceWorker" in navigator && !navigator.serviceWorker.controller && !sessionStorage.getItem("vc_reloaded")) {
+    try {
+      navigator.serviceWorker.register("sw.js");
+      $("loading").hidden = false; $("loadText").textContent = "Installing VisualCount…";
+      await new Promise((res, rej) => { navigator.serviceWorker.addEventListener("controllerchange", res); setTimeout(rej, 20000); });
+      sessionStorage.setItem("vc_reloaded", "1"); location.reload(); return;
+    } catch (e) {}
+  } else if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  loadModel();
+})();
+</script>
+</body>
+</html>
