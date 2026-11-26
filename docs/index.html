@@ -219,19 +219,34 @@ async function fetchWithProgress(url, onPct) {
 }
 async function loadModel() {
   const box = $("loading"), bar = $("loadBar"), txt = $("loadText");
+  // "Safe mode" = 1 CPU core, AI on the main thread. Used automatically if the fast mode fails on this phone.
+  let safe = false; try { safe = localStorage.getItem("vc_safe") === "1"; } catch (e) {}
   box.hidden = false;
+  let step = "download";
   try {
     ort.env.wasm.wasmPaths = new URL("vendor/", location.href).href;
-    ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
-    ort.env.wasm.proxy = true; // run the AI in the background so the camera stays smooth
+    ort.env.wasm.numThreads = !safe && self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
+    ort.env.wasm.proxy = !safe; // fast mode: run the AI in the background so the camera stays smooth
     const bytes = await fetchWithProgress(MODEL_URL, pct => { bar.style.width = pct + "%"; txt.textContent = `Preparing the counting AI… ${pct}%`; });
-    txt.textContent = "Starting the counting AI…";
-    session = await ort.InferenceSession.create(bytes, { executionProviders: ["wasm"], graphOptimizationLevel: "all" });
+    if (bytes.length < 1000000) throw new Error(`model file too small (${bytes.length} bytes)`);
+    step = "start"; txt.textContent = "Starting the counting AI…";
+    session = await ort.InferenceSession.create(bytes, { executionProviders: ["wasm"], graphOptimizationLevel: safe ? "basic" : "all" });
     box.hidden = true;
   } catch (e) {
-    modelErr = e; console.error(e);
-    txt.textContent = "Couldn't load the counting AI. Connect to the internet once and reopen the app.";
-    bar.style.width = "0%";
+    console.error(e);
+    if (!safe && step === "start") { // fast mode failed on this phone: switch to safe mode and reload once
+      try { localStorage.setItem("vc_safe", "1"); } catch (err) {}
+      txt.textContent = "Switching to safe mode…"; setTimeout(() => location.reload(), 600); return;
+    }
+    modelErr = e; bar.style.width = "0%";
+    txt.textContent = step === "download"
+      ? "Couldn't download the counting AI. Check the internet and tap Try again."
+      : "The counting AI couldn't start on this phone.";
+    const d = document.createElement("small"); d.style.opacity = ".7"; d.style.wordBreak = "break-word";
+    d.textContent = `Details (send me a screenshot): ${step} · ${(e && (e.message || e)) || "unknown"}`.slice(0, 300) + ` · threads ${ort.env.wasm.numThreads} · safe ${safe} · isolated ${self.crossOriginIsolated} · mem ${navigator.deviceMemory || "?"} GB`;
+    const btn = document.createElement("button"); btn.textContent = "Try again"; btn.className = "primary"; btn.style.borderRadius = "12px";
+    btn.onclick = () => { try { localStorage.removeItem("vc_safe"); } catch (err) {} location.reload(); };
+    box.append(d, btn);
   }
 }
 function toTensor(can, maxLong) {
@@ -587,9 +602,9 @@ startCamera();
   // and the 43 MB model is saved on the phone (no second download later).
   if ("serviceWorker" in navigator && !navigator.serviceWorker.controller && !sessionStorage.getItem("vc_reloaded")) {
     try {
-      navigator.serviceWorker.register("sw.js");
       $("loading").hidden = false; $("loadText").textContent = "Installing VisualCount…";
-      await new Promise((res, rej) => { navigator.serviceWorker.addEventListener("controllerchange", res); setTimeout(rej, 20000); });
+      await navigator.serviceWorker.register("sw.js");
+      await new Promise((res, rej) => { navigator.serviceWorker.addEventListener("controllerchange", res); setTimeout(rej, 15000); });
       sessionStorage.setItem("vc_reloaded", "1"); location.reload(); return;
     } catch (e) {}
   } else if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
